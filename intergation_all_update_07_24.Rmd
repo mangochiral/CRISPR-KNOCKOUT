@@ -1,0 +1,760 @@
+---
+title: "intergration_all_07_24"
+author: "Chandrima"
+date: "2024-07-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+suppressPackageStartupMessages({.libPaths("/Users/senlab/Partners HealthCare Dropbox/Chang-Yu Chen/Sen Lab/Chandrima Modak/environments/renv/library/macos/R-4.4/aarch64-apple-darwin20")
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(patchwork)
+  library(Matrix)
+  library(tidyverse)
+  library(glmGamPoi)
+  library(reticulate)
+  # library(biomaRt)
+  library(EnhancedVolcano)
+  library(cowplot)
+  library(DoubletFinder)
+  library(mixtools)
+  library(SoupX)
+  library(DropletUtils)
+  library(data.table)
+  library(here)
+  library(celda)
+  library(decontX)
+  library(clustree)
+  library(ggsci)
+  library(presto)
+  library(SeuratWrappers)
+  library(VISION)
+  # source("/Users/senlab/Partners HealthCare Dropbox/Chang-Yu Chen/Sen Lab/Chandrima Modak/PS09_integration/metafunction.R")
+  use_condaenv("/Users/senlab/anaconda3/envs/scvi-env")})
+```
+
+```{r}
+source("/Users/senlab/Dropbox (Partners HealthCare)/Sen Lab/Chandrima Modak/metafunctions/functions_meta.R")
+guide_set = c('EOMES', 'BC', 'TOX', 'JUN', 'CD8A', 'CDKN1B', 'TBX21', 'ARID1A')
+```
+
+
+# PS07 Acute
+```{r}
+# copy_ps07 <- ps07.acute
+# copy_ps07 -> ps07.acute
+ps07.acute <- file_clean("/Users/senlab/Partners HealthCare Dropbox/Chang-Yu Chen/Sen Lab/Chandrima Modak/matrix_files_for_PS0X/PS07_A/filtered_feature_bc_matrix")
+ps07.acute <- make_seurat_object(ps07.acute, "/Users/senlab/Partners HealthCare Dropbox/Chang-Yu Chen/Sen Lab/Chandrima Modak/matrix_files_for_PS0X/PS07_A/raw_feature_bc_matrix")
+ps07.acute <- ps07.acute %>%
+  remove_bad_cells() %>%
+  standard_seurat_rna()
+```
+
+```{r}
+ps07.acute <- dimultiplex_assay(ps07.acute) # Donor
+ps07.acute <-  dimultiplex_assay(ps07.acute) # Protein
+#RidgePlot
+ridge_plot <- RidgePlot(ps07.acute, assay = "DONOR", features = rownames(ps07.acute[["DONOR"]]), ncol = 2)
+ggsave(filename = "ps07.acute_donor_dimultiplex.pdf", plot = ridge_plot, width = 10, height = 8)
+#ViolinPlot
+vln_plot <- VlnPlot(ps07.acute, features = "nCount_RNA", group.by = "DONOR_classification.global", pt.size = 0.1, log = TRUE)
+ggsave(filename =  "ps07.acute_donor_dimultiplex_ncounts.pdf", plot = vln_plot, width = 10, height = 8)
+#Remove ambigious cells
+ps07.acute <- subset(ps07.acute, DONOR_classification.global != "Negative")
+#RidgePlot
+ridge_plot <- RidgePlot(ps07.acute, assay = "DONOR", features = rownames(ps07.acute[["DONOR"]]), group.by = "DONOR_classification.global", ncol = 2)
+ggsave(filename = "ps07.acute_donor_dimultiplex_global.pdf", plot = ridge_plot, width = 10, height = 8)
+
+# Distribution of Singlets and Doublets distribution in Donor assay
+ps07.acute <- embeddings_for_dimutliplex(ps07.acute)
+
+#Dimplot
+dim_plot <- DimPlot(ps07.acute, group.by = "hash.ID", reduction = "tsne_dimulassay")
+ggsave(filename = "ps07.acute_singlet_vs_doublets.pdf", plot = dim_plot, width = 10, height = 8)
+
+#Heatmap
+heatmap_plot <- HTOHeatmap(ps07.acute, assay = "DONOR")
+ggsave(filename = "ps07.acute_dimultiplex_heatmap_singlet_vs_doublet.pdf", plot = heatmap_plot, width = 10, height = 8)
+
+ps07.acute <-  subset(ps07.acute, DONOR_classification.global != "Doublet")
+
+#RidgePlot
+ridge_plot <- RidgePlot(ps07.acute, assay = "DONOR", features = rownames(ps07.acute[["DONOR"]]), group.by = "DONOR_classification" , ncol = 2)
+ggsave(filename = "ps07.acute_donor_dimultiplex_singlet.pdf", plot = ridge_plot, width = 10, height = 8)
+
+#Heatmap
+heatmap_plot <- HTOHeatmap(ps07.acute, assay = "DONOR")
+ggsave(filename = "ps07.acute_dimultiplex_heatmap_singlet.pdf", plot = heatmap_plot, width = 10, height = 8)
+
+```
+
+```{r}
+
+ps07.acute@meta.data['condition'] <- 'acute_d14'
+ps07.acute@meta.data <- ps07.acute@meta.data %>%
+  mutate(donor = case_when(
+    DONOR_classification == "hashtag-1" ~ "donor-1",
+    DONOR_classification == "hashtag-2" ~ "donor-2",
+    DONOR_classification == "hashtag-3" ~ "donor-3",
+  ))
+```
+
+```{r}
+saveRDS(ps07.acute, "ps07_acute.RDS")
+```
+
+
+
+# PS07 Chronic
+```{r}
+ps07.chronic <- file_clean("/Users/senlab/Partners HealthCare Dropbox/Chang-Yu Chen/Sen Lab/Chandrima Modak/PS07_C/filtered_feature_bc_matrix")
+ps07.chronic <- make_seurat_object(ps07.chronic, "/Users/senlab/Partners HealthCare Dropbox/Chang-Yu Chen/Sen Lab/Chandrima Modak/PS07_C/raw_feature_bc_matrix")
+ps07.chronic <- ps07.chronic %>%
+  remove_bad_cells() %>%
+  standard_seurat_rna()
+```
+
+```{r}
+ps07.chronic <- dimultiplex_assay(ps07.chronic) # Donor
+ps07.chronic <-  dimultiplex_assay(ps07.chronic) # Protein
+#RidgePlot
+ridge_plot <- RidgePlot(ps07.chronic, assay = "DONOR", features = rownames(ps07.chronic[["DONOR"]]), ncol = 2)
+ggsave(filename = "ps07.chronic_donor_dimultiplex.pdf", plot = ridge_plot, width = 10, height = 8)
+#ViolinPlot
+vln_plot <- VlnPlot(ps07.chronic, features = "nCount_RNA", group.by = "DONOR_classification.global", pt.size = 0.1, log = TRUE)
+ggsave(filename =  "ps07.chronic_donor_dimultiplex_ncounts.pdf", plot = vln_plot, width = 10, height = 8)
+#Remove ambigious cells
+ps07.chronic <- subset(ps07.chronic, DONOR_classification.global != "Negative")
+#RidgePlot
+ridge_plot <- RidgePlot(ps07.chronic, assay = "DONOR", features = rownames(ps07.chronic[["DONOR"]]), group.by = "DONOR_classification.global", ncol = 2)
+ggsave(filename = "ps07.chronic_donor_dimultiplex_global.pdf", plot = ridge_plot, width = 10, height = 8)
+
+# Distribution of Singlets and Doublets distribution in Donor assay
+ps07.chronic <- embeddings_for_dimutliplex(ps07.chronic)
+
+#Dimplot
+dim_plot <- DimPlot(ps07.chronic, group.by = "hash.ID", reduction = "tsne_dimulassay")
+ggsave(filename = "ps07.chronic_singlet_vs_doublets.pdf", plot = dim_plot, width = 10, height = 8)
+
+#Heatmap
+heatmap_plot <- HTOHeatmap(ps07.chronic, assay = "DONOR")
+ggsave(filename = "ps07.chronic_dimultiplex_heatmap_singlet_vs_doublet.pdf", plot = heatmap_plot, width = 10, height = 8)
+
+ps07.chronic <-  subset(ps07.chronic, DONOR_classification.global != "Doublet")
+
+#RidgePlot
+ridge_plot <- RidgePlot(ps07.chronic, assay = "DONOR", features = rownames(ps07.chronic[["DONOR"]]), group.by = "DONOR_classification" , ncol = 2)
+ggsave(filename = "ps07.chronic_donor_dimultiplex_singlet.pdf", plot = ridge_plot, width = 10, height = 8)
+
+#Heatmap
+heatmap_plot <- HTOHeatmap(ps07.chronic, assay = "DONOR")
+ggsave(filename = "ps07.chronic_dimultiplex_heatmap_singlet.pdf", plot = heatmap_plot, width = 10, height = 8)
+```
+
+
+```{r}
+ps07.chronic@meta.data['condition'] <- 'chronic_d14'
+ps07.chronic@meta.data <- ps07.chronic@meta.data %>%
+  mutate(donor = case_when(
+    DONOR_classification == "hashtag 1" ~ "donor-1",
+    DONOR_classification == "hashtag 2" ~ "donor-2",
+    DONOR_classification == "hashtag 3" ~ "donor-3",
+  ))
+```
+
+```{r}
+saveRDS(ps07.chronic, "ps07_chronic.RDS")
+```
+
+
+# PS09 Day6
+```{r}
+ps09.d6 <- file_clean("/Users/senlab/Chandrima_files/PS09_Day6/PS09_D6/filtered_feature_bc_matrix")
+ps09.d6 <- make_seurat_object(ps09.d6, "/Users/senlab/Chandrima_files/PS09_Day6/PS09_D6/raw_feature_bc_matrix")
+ps09.d6 <- ps09.d6 %>%
+  remove_bad_cells() %>%
+  standard_seurat_rna()
+```
+
+```{r}
+ps09.d6  <- dimultiplex_assay(ps09.d6 ) # condition
+
+#RidgePlot
+ridge_plot <- RidgePlot(ps09.d6, assay = "HASH", features = rownames(ps09.d6[["HASH"]]), ncol = 2)
+ggsave(filename = "ps09.d6_condition_dimultiplex.pdf", plot = ridge_plot, width = 10, height = 8)
+#ViolinPlot
+vln_plot <- VlnPlot(ps09.d6, features = "nCount_RNA", group.by = "HASH_classification.global", pt.size = 0.1, log = TRUE)
+ggsave(filename =  "ps09.d6_dimultiplex_ncounts.pdf", plot = vln_plot, width = 10, height = 8)
+#Remove ambigious cells
+ps09.d6 <- subset(ps09.d6, HASH_classification.global != "Negative")
+#RidgePlot
+ridge_plot <- RidgePlot(ps09.d6, assay = "HASH", features = rownames(ps09.d6[["HASH"]]), group.by = "HASH_classification.global", ncol = 2)
+ggsave(filename = "ps09.d6_condition_dimultiplex_global.pdf", plot = ridge_plot, width = 10, height = 8)
+
+# Distribution of Singlets and Doublets distribution in Donor assay
+ps09.d6 <- embeddings_for_dimutliplex(ps09.d6)
+
+#Dimplot
+dim_plot <- DimPlot(ps09.d6, group.by = "hash.ID", reduction = "tsne_dimulassay")
+ggsave(filename = "ps09.d6_singlet_vs_doublets.pdf", plot = dim_plot, width = 10, height = 8)
+
+#Heatmap
+heatmap_plot <- HTOHeatmap(ps09.d6, assay = "HASH")
+ggsave(filename = "ps09.d6_dimultiplex_heatmap_singlet_vs_doublet.pdf", plot = heatmap_plot, width = 10, height = 8)
+
+ps09.d6 <-  subset(ps09.d6, HASH_classification.global != "Doublet")
+
+#RidgePlot
+ridge_plot <- RidgePlot(ps09.d6, assay = "HASH", features = rownames(ps09.d6[["HASH"]]), group.by = "HASH_classification" , ncol = 2)
+ggsave(filename = "ps09.d6_condition_dimultiplex_singlet.pdf", plot = ridge_plot, width = 10, height = 8)
+
+#Heatmap
+heatmap_plot <- HTOHeatmap(ps09.d6, assay = "HASH")
+ggsave(filename = "ps09.d6_dimultiplex_heatmap_singlet.pdf", plot = heatmap_plot, width = 10, height = 8)
+```
+
+
+
+```{r}
+ps09.d6@meta.data <- ps09.d6@meta.data %>%
+  mutate(condition = case_when(
+    HASH_classification == "hashtag-1" ~ "acute_d6",
+    HASH_classification == "hashtag-2" ~ "chronic_d6"
+  ))
+ps09.d6@meta.data['donor'] <- 'donor-4'
+```
+
+```{r}
+saveRDS(ps09.d6, "ps09d6.RDS")
+```
+
+# PS09 Day8
+```{r}
+ps09.d8 <- file_clean("/Users/senlab/Chandrima_files/PS09_D8/PS09_D8/filtered_feature_bc_matrix")
+ps09.d8 <- make_seurat_object(ps09.d8, "/Users/senlab/Chandrima_files/PS09_D8/PS09_D8/raw_feature_bc_matrix")
+ps09.d8 <- ps09.d8 %>%
+  remove_bad_cells() %>%
+  standard_seurat_rna()
+```
+
+```{r}
+ps09.d8  <- dimultiplex_assay(ps09.d8 ) # condition
+
+#RidgePlot
+ridge_plot <- RidgePlot(ps09.d8, assay = "HASH", features = rownames(ps09.d8[["HASH"]]), ncol = 2)
+ggsave(filename = "ps09.d8_condition_dimultiplex.pdf", plot = ridge_plot, width = 10, height = 8)
+#ViolinPlot
+vln_plot <- VlnPlot(ps09.d8, features = "nCount_RNA", group.by = "HASH_classification.global", pt.size = 0.1, log = TRUE)
+ggsave(filename =  "ps09.d8_dimultiplex_ncounts.pdf", plot = vln_plot, width = 10, height = 8)
+#Remove ambigious cells
+ps09.d8 <- subset(ps09.d8, HASH_classification.global != "Negative")
+#RidgePlot
+ridge_plot <- RidgePlot(ps09.d8, assay = "HASH", features = rownames(ps09.d8[["HASH"]]), group.by = "HASH_classification.global", ncol = 2)
+ggsave(filename = "ps09.d8_condition_dimultiplex_global.pdf", plot = ridge_plot, width = 10, height = 8)
+
+# Distribution of Singlets and Doublets distribution in Donor assay
+ps09.d8 <- embeddings_for_dimutliplex(ps09.d8)
+
+#Dimplot
+dim_plot <- DimPlot(ps09.d8, group.by = "hash.ID", reduction = "tsne_dimulassay")
+ggsave(filename = "ps09.d8_singlet_vs_doublets.pdf", plot = dim_plot, width = 10, height = 8)
+
+#Heatmap
+heatmap_plot <- HTOHeatmap(ps09.d8, assay = "HASH")
+ggsave(filename = "ps09.d8_dimultiplex_heatmap_singlet_vs_doublet.pdf", plot = heatmap_plot, width = 10, height = 8)
+
+ps09.d8 <-  subset(ps09.d8, HASH_classification.global != "Doublet")
+
+#RidgePlot
+ridge_plot <- RidgePlot(ps09.d8, assay = "HASH", features = rownames(ps09.d8[["HASH"]]), group.by = "HASH_classification" , ncol = 2)
+ggsave(filename = "ps09.d8_condition_dimultiplex_singlet.pdf", plot = ridge_plot, width = 10, height = 8)
+
+#Heatmap
+heatmap_plot <- HTOHeatmap(ps09.d8, assay = "HASH")
+ggsave(filename = "ps09.d8_dimultiplex_heatmap_singlet.pdf", plot = heatmap_plot, width = 10, height = 8)
+```
+
+```{r}
+ps09.d8@meta.data <- ps09.d8@meta.data %>%
+  mutate(condition = case_when(
+    HASH_classification == "hashtag-1" ~ "acute_d8",
+    HASH_classification == "hashtag-2" ~ "chronic_d8"
+  ))
+ps09.d8@meta.data['donor'] <- 'donor-4'
+```
+
+```{r}
+saveRDS(ps09.d8, "ps09d8.RDS")
+```
+
+# PS09 tetratmer
+```{r}
+ps09.tet <- file_clean("/Users/senlab/Partners HealthCare Dropbox/Chang-Yu Chen/Sen Lab/Chandrima Modak/PS09_TET/PS09_tet/filtered_feature_bc_matrix")
+ps09.tet <- make_seurat_object(ps09.tet, "/Users/senlab/Partners HealthCare Dropbox/Chang-Yu Chen/Sen Lab/Chandrima Modak/PS09_TET/PS09_tet/raw_feature_bc_matrix")
+ps09.tet <- ps09.tet %>%
+   remove_bad_cells() %>%
+  standard_seurat_rna()
+```
+
+```{r reassigning tetramer for same tetramer doublet}
+ps09.tet@meta.data['condition'] <- 'acute_tet+'
+ps09.tet@meta.data['donor'] <- 'donor-4'
+```
+
+```{r}
+ps09.tet  <- dimultiplex_assay(ps09.tet ) # condition
+
+ps09.tet@meta.data <- ps09.tet@meta.data %>%
+  mutate(HTO_classification.reassigned = case_when(
+           HTO_classification == "CMV-pp65_CMV-pp65" ~ "CMV-pp65",
+           HTO_classification == "EBV-BMLF1_EBV-BMLF1" ~ "EBV-BMLF1",
+           HTO_classification == "EBV-LMP2_EBV-LMP2" ~ "EBV-LMP2",
+           HTO_classification == "Flu-MP_Flu-MP" ~ "Flu-MP",
+           TRUE ~ HTO_classification  # Include this to keep original classification if none match
+         ),
+         HTO_classification.reassigned.global = case_when(
+           HTO_classification == "CMV-pp65_CMV-pp65" ~ "Singlet",
+           HTO_classification == "EBV-BMLF1_EBV-BMLF1" ~ "Singlet",
+           HTO_classification == "EBV-LMP2_EBV-LMP2" ~ "Singlet",
+           HTO_classification == "Flu-MP_Flu-MP" ~ "Singlet",
+           TRUE ~ HTO_classification.global  # Keep original global classification if none match
+         ))
+
+#RidgePlot
+ridge_plot <- RidgePlot(ps09.tet, assay = "HTO", features = rownames(ps09.tet[["HTO"]]), ncol = 2)
+ggsave(filename = "ps09.tet_condition_dimultiplex.pdf", plot = ridge_plot, width = 10, height = 8)
+#ViolinPlot
+vln_plot <- VlnPlot(ps09.tet, features = "nCount_RNA", group.by = "HTO_classification.reassigned.global", pt.size = 0.1, log = TRUE)
+ggsave(filename =  "ps09.tet_dimultiplex_ncounts.pdf", plot = vln_plot, width = 10, height = 8)
+#Remove ambigious cells
+ps09.tet <- subset(ps09.tet, HTO_classification.reassigned.global != "Negative")
+#RidgePlot
+ridge_plot <- RidgePlot(ps09.tet, assay = "HTO", features = rownames(ps09.tet[["HTO"]]), group.by = "HTO_classification.reassigned.global", ncol = 2)
+ggsave(filename = "ps09.tet_condition_dimultiplex_global.pdf", plot = ridge_plot, width = 10, height = 8)
+
+# Distribution of Singlets and Doublets distribution in Donor assay
+ps09.tet <- embeddings_for_dimutliplex(ps09.tet)
+
+#Dimplot
+dim_plot <- DimPlot(ps09.tet, group.by = "HTO_classification.reassigned", reduction = "tsne_dimulassay")
+ggsave(filename = "ps09.tet_singlet_vs_doublets.pdf", plot = dim_plot, width = 10, height = 8)
+
+#Heatmap
+heatmap_plot <- HTOHeatmap(ps09.tet, assay = "HTO")
+ggsave(filename = "ps09.tet_dimultiplex_heatmap_singlet_vs_doublet.pdf", plot = heatmap_plot, width = 10, height = 8)
+
+ps09.tet <-  subset(ps09.tet, HTO_classification.reassigned.global != "Doublet")
+
+#RidgePlot
+ridge_plot <- RidgePlot(ps09.tet, assay = "HTO", features = rownames(ps09.tet[["HTO"]]), group.by = "HTO_classification.reassigned" , ncol = 2)
+ggsave(filename = "ps09.tet_condition_dimultiplex_singlet.pdf", plot = ridge_plot, width = 10, height = 8)
+
+#Heatmap
+heatmap_plot <- HTOHeatmap(ps09.tet, assay = "HTO")
+ggsave(filename = "ps09.tet_dimultiplex_heatmap_singlet.pdf", plot = heatmap_plot, width = 10, height = 8)
+```
+
+```{r}
+saveRDS(ps09.tet, "ps09tet.RDS")
+```
+
+# Data INTEGRATION ##################################################################################
+
+```{r}
+ps07.acute <- readRDS("ps07_acute.RDS")
+ps07.chronic <- readRDS("ps07_chronic.RDS")
+ps09.d6 <- readRDS("ps09d6.RDS")
+ps09.d8 <- readRDS( "ps09d8.RDS")
+ps09.tet <- readRDS("ps09tet.RDS")
+```
+
+
+```{r}
+perturb <- merge(x = ps09.d8, y = c(ps07.acute, ps07.chronic, ps09.d6, ps09.tet), add.cell.ids = c("09D8", "07A14", "07C14", "09D6", "09TET"), project = "INTEGRATE")
+```
+
+```{r}
+all.genes = rownames(perturb)
+perturb <- perturb %>%
+  ScaleData(features = all.genes, verbose = F) %>%
+  RunPCA(features = all.genes ,reduction.name = "pca_unintegrated", 
+           reduction.key = "pc_unintegrated", approx = F, verbose = F) 
+```
+
+
+```{r}
+harmony.data <- IntegrateLayers(object = perturb, method = HarmonyIntegration, orig.reduction = "pca_unintegrated", new.reduction = "harmony", group.by.vars = "donor", verbose = FALSE)
+```
+
+```{r}
+saveRDS(harmony.data, "harmony_data.RDS")
+```
+
+
+```{r}
+harmony  <- FindNeighbors(harmony.data, reduction = "harmony", dims = 1:30)
+```
+
+
+```{r}
+
+resolutions <- c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0)
+for (res in resolutions) {
+  harmony <- FindClusters(harmony, resolution = res, verbose = FALSE)
+}
+```
+
+
+
+```{r}
+# Extract clustering information
+clustering_data <- harmony@meta.data %>% 
+  select(contains("RNA_snn_res."))
+
+# Add the cell names as a column
+clustering_data$cell <- rownames(clustering_data)
+```
+
+```{r}
+clustree_plot <- clustree(clustering_data, prefix = "RNA_snn_res.")
+ggsave(filename = "PS09-07_cluster_harmony_res.pdf", plot = clustree_plot, width = 10, height = 8)
+```
+
+
+```{r}
+harmony.data  <- harmony.data  %>%
+  FindNeighbors(reduction = "harmony", dims = 1:30)%>%
+  FindClusters(resolution = 0.3, cluster.name = "integrated_clusters")%>%
+  RunUMAP( dims = 1:30, reduction = "harmony", reduction.name = "umap_harmony",reduction.key = "umap_harmony")
+```
+
+```{r}
+saveRDS(harmony.data, "harmony_data_with_cluster_info.RDS")
+```
+
+```{r}
+library(ggsci)
+Idents(harmony.data) <- "integrated_clusters"
+dim_plot <- DimPlot(harmony.data, split.by = "condition", reduction = "umap_harmony", cols = pal_d3("category20")(10), pt.size = 0.5)
+ggsave(filename = "PS09-07_merged_condition_dim_plot.pdf", plot = dim_plot, width = 12, height = 4)
+```
+
+```{r}
+plot_grid(ncol = 2, DimPlot(harmony.data, split.by = "condition", reduction = "umap_harmony", cols = pal_d3("category20")(10), pt.size = 0.5),
+
+
+FeaturePlot(harmony.data, reduction = "umap_harmony", cols = c("lightgrey", "darkgreen"), features = c("TCF7", "SLAMF6", "TOX", "PDCD1", "HAVCR2", "ENTPD1", "IL7R", "CD3"), pt.size = 0.5))
+# ggsave(filename = "PS09-07_merged_feature_plot.pdf", plot = feature_plot, width = 10, height = 8)
+```
+
+```{r}
+DefaultAssay(harmony.data) <- "RNA"
+# FeaturePlot(harmony.data, reduction = "umap_harmony", cols = c("lightgrey", "darkgreen"), features = c("G2M", "G1", "S"), pt.size = 0.5)
+dim_plot <- DimPlot(harmony.data, split.by = "Phase", reduction = "umap_harmony", cols = pal_d3("category20")(10), pt.size = 0.5)
+ggsave(filename = "PS09-07_merged_phase_dim_plot.pdf", plot = dim_plot, width = 12, height = 6)
+```
+
+
+```{r}
+FeaturePlot(harmony.data, reduction = "umap_harmony", cols = c("lightgrey", "darkgreen"), features = c("TCF7", "SLAMF6", "TOX", "PDCD1", "HAVCR2", "ENTPD1", "IL7R", "CXCL13"), pt.size = 0.5)
+```
+
+
+
+```{r}
+df_genes <- data.frame(Embeddings(harmony.data, reduction = "umap_harmony"))
+df_genes$condition <- harmony.data$condition
+df_genes$donor <- harmony.data$donor
+df_genes$HTO <- harmony.data$HTO_classification.reassigned
+```
+
+```{r}
+set.seed(4393)
+tetramer_plot <- ggplot(df_genes, aes(x = umapharmony_1, y = umapharmony_2)) + geom_density_2d_filled() + facet_wrap(~HTO)
+ggsave(filename = "PS09-07_merged_tetramer_dist_plot.pdf", plot = tetramer_plot , width = 12, height = 4)
+```
+
+```{r}
+DefaultAssay(harmony.data) <- "PROTEIN"
+FeaturePlot(harmony.data, reduction = "umap_harmony", cols = c("lightgrey", "darkgreen"), features = c("PD1-C0088","CD39-C0176","LAG3-C0152","TIM3-C0169","KLRG1-C0153","CD38-C0410","CD73-C0577","NKG2D-C0165" ,"GPR56-C1021"  ,"CD28-C0386","CD45RA-C0063","PD1","CD39","LAG3.1","TIM3","KLRG1.1","CD38.1"), pt.size = 0.5)
+```
+
+```{r}
+Idents(harmony.data) <- "HTO_classification.reassigned"
+vln_plot <- VlnPlot(harmony.data, features = c("GZMB", "GZMK"), split.by = "HTO_classification.reassigned", pt.size = 0.1, log = TRUE)
+ggsave(filename = "PS09-07_merged_GZMB_GZMK.pdf", plot = vln_plot, width = 12, height = 6)
+```
+
+```{r}
+feature_plot <- FeaturePlot(harmony.data, reduction = "umap_harmony", cols = c("lightgrey", "darkgreen"), features = c("TCF7", "SLAMF6", "TOX", "PDCD1", "HAVCR2", "ENTPD1", "IL7R", "CD3","TIGIT"), pt.size = 0.5)
+ggsave(filename = "PS09-07_merged_feature_plot.pdf", plot = feature_plot, width = 12, height = 8)
+```
+
+```{r}
+dim_plot <- DimPlot(harmony.data, group.by = "condition", reduction = "umap_harmony", cols = pal_d3("category20")(10), pt.size = 0.5)
+ggsave(filename = "PS09-07_merged_condition_group_dim_plot.pdf", plot = dim_plot, width = 12, height = 8)
+``` 
+
+```{r}
+Idents(harmony.data) <- "condition"
+vln_plot <- VlnPlot(harmony.data, features = c("KLRC1", "KLRD1"), split.by = "condition", pt.size = 0.1, log = TRUE)
+ggsave(filename = "PS09-07_merged_KLRC1_D1.pdf", plot = vln_plot, width = 12, height = 6)
+```
+
+# Joining Layers for finding markers 
+```{r}
+harmony.data <- readRDS(here("harmony_data_with_cluster_info.RDS"))
+```
+
+```{r}
+test <- JoinLayers(harmony.data)
+Idents(test) <- "integrated_clusters"
+```
+
+
+# Comparing for each cluster DGE for each condition
+```{r}
+clusters <- unique(test$integrated_clusters)
+for (i in clusters) {
+  tryCatch({
+    DgE.cluster_markers <- FindMarkers(test, assay = "RNA", slot = "data", group.by = "condition", 
+                                       ident.1 = "acute_tet+", ident.2 = "acute_d14", logfc.threshold = 1.0, 
+                                       min.pct = 0.5, subset.ident = as.character(i))
+    
+    enhanced_plot <- EnhancedVolcano(
+      toptable = DgE.cluster_markers,
+      lab = rownames(DgE.cluster_markers),
+      x = 'avg_log2FC',
+      y = 'p_val_adj',
+      FCcutoff = 1.0,
+      pCutoff = 0.05,
+      title = paste("Volcano plot for cluster", as.character(i), "in  acute_tet+ vs acute Day 14")
+    )
+    
+    filename <- paste0("PS09-07_clusterimarkers_acute_tet+_d14_", as.character(i), ".pdf")
+    ggsave(filename = filename, plot = enhanced_plot, width = 12, height = 8)
+  }, error = function(e) {
+    message(paste("Skipping cluster", as.character(i), "due to an error:", e$message))
+  })
+}
+
+
+```
+
+
+```{r}
+Idents(test) <- "condition"
+vln_plot <- VlnPlot(test, features = c("GZMB", "GZMK", "GZMA"))
+ggsave(filename = "PS09-07_by-condition_gene_expression.pdf", plot = vln_plot, width = 12, height = 8)
+```
+
+# DGE by integrated_cluster Finding all markers
+
+```{r}
+Idents(test) <- "integrated_clusters"
+markers.for.cluster <- RunPrestoAll(test, slot = "data", logfc.threshold = 1.0, min.pct = 0.5,)
+```
+```{r}
+markers.for.cluster <- markers.for.cluster %>%
+  group_by(cluster) %>%
+  filter(avg_log2FC > 1 & p_val_adj < 0.05)
+```
+
+```{r}
+write.csv(markers.for.cluster, "markers_by_clusters.csv", row.names = FALSE)
+```
+
+```{r}
+# markers.for.cluster <- read.csv("markers_by_clusters.csv")
+markers.for.cluster <- markers.for.cluster %>%
+  group_by(cluster) %>%
+  arrange(desc(avg_log2FC)) %>%
+  mutate(rank = row_number()) %>%
+  filter(rank <= ceiling(n() * 0.2)) %>%
+  select(-rank)
+```
+
+```{r}
+markers.for.cluster <- markers.for.cluster %>%
+  arrange(cluster)
+```
+
+```{r}
+markers.for.cluster$p_val_adj <- ifelse(markers.for.cluster$p_val_adj == 0, 1e-300, markers.for.cluster$p_val_adj)
+markers.for.cluster$log_p_val <- -log10(markers.for.cluster$p_val_adj)
+```
+
+```{r}
+dge_plot <- ggplot(markers.for.cluster, aes(x = avg_log2FC, y = log_p_val)) +
+  geom_point(aes(color = cluster), alpha = 0.6, size = 1.5) +
+  theme_minimal() +
+  labs(title = "Volcano Plot of Differential Expression by Clusters",
+       x = "Log2 Fold Change",
+       y = "-Log10 Adjusted P-value") +
+  scale_color_manual(values = rainbow(length(unique(markers.for.cluster$cluster)))) +
+  geom_vline(xintercept = c(-0.5, 0.5), linetype = "dashed", color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  geom_text_repel(data = markers.for.cluster,
+                  aes(label = gene), size = 4, max.overlaps = 10)
+ggsave(filename = "PS09-07_DGE_volcano_plot_by_cluster.pdf", plot = dge_plot, width = 12, height = 8)
+```
+
+```{r}
+dim_plot <- DimPlot(harmony.data, group.by = "integrated_clusters", reduction = "umap_harmony", cols = pal_d3("category20")(10), pt.size = 0.5)
+ggsave(filename = "PS09-07_merged_clusters_dim_plot.pdf", plot = dim_plot, width = 8, height = 6)
+```
+
+
+```{r}
+heatmap_plot <- DoHeatmap(test, features = markers.for.cluster$gene ) + NoLegend()
+ggsave(filename = "PS09-07_DGE_integrated_clusters.pdf", plot = heatmap_plot, width = 12, height = 20)
+```
+
+```{r}
+?DotPlot
+```
+
+
+```{r}
+Idents(test) <- factor(Idents(test), levels = c("acute_d6", "acute_d8", "acute_tet+", "acute_d14", "chronic_d6","chronic_d8","chronic_d14"))
+inhibitory_receptor <- c ("PDCD1","TIGIT", "CD244", "CTLA4", "ENTPD1","CD38", "CD101", "HAVCR2", "LAG3")
+dotplot <- DotPlot(test, features = inhibitory_receptor) + RotatedAxis()
+ggsave(filename = "PS09-07_dotplot_inhibitory_receptor.pdf", plot = dotplot, width = 8, height = 6)
+cell_receptor <- c("TNFRSF9","TNFRSF4","ICOS","TNFSF14","SELL","IL7R","Il2RB","KLRG1","CD28")
+dotplot <- DotPlot(test, features = cell_receptor) + RotatedAxis()
+ggsave(filename = "PS09-07_dotplot_cell_receptor.pdf", plot = dotplot, width = 8, height = 6)
+effector_receptor <- c( "IFNG", "TNF", "IL2", "IL10", "GZMA", "GZMB", "PRF1", "FASL", "TNFSF10")
+dotplot <- DotPlot(test, features = effector_receptor) + RotatedAxis()
+ggsave(filename = "PS09-07_dotplot_effector_receptor.pdf", plot = dotplot, width = 8, height = 6)
+transcriptor_factors <- c("HIF1A", "NFKB1", "TCF7", "ID2", "ID3", "NFKB2", "LEF1", "SATB1", "BACH2","BATF","NFATC1","RUNX1","RUNX3","PRDM1", "TBX21","TOX","BCL6", "EOMES")
+dotplot <- DotPlot(test, features = transcriptor_factors) + RotatedAxis()
+ggsave(filename = "PS09-07_dotplot_transcriptor_factors.pdf", plot = dotplot, width = 8, height = 6)
+```
+
+
+# DGE by tetramers Finding all markers
+
+```{r}
+Idents(test) <- "HTO_classification.reassigned"
+markers.for.tet <- RunPrestoAll(test, slot = "data", logfc.threshold = 1.0, min.pct = 0.5)
+```
+```{r}
+markers.for.tet <- markers.for.tet %>%
+  group_by(cluster) %>%
+  filter(avg_log2FC > 1 & p_val_adj < 0.05)
+```
+
+```{r}
+write.csv(markers.for.tet, "markers_by_tet.csv", row.names = FALSE)
+```
+
+```{r}
+markers.for.tet <- read.csv("markers_by_tet.csv")
+markers.for.tet <- markers.for.tet %>%
+  group_by(cluster) %>%
+  arrange(desc(avg_log2FC)) %>%
+  mutate(rank = row_number()) %>%
+  filter(rank <= ceiling(n() * 0.2)) %>%
+  select(-rank)
+```
+
+```{r}
+markers.for.tet <- markers.for.tet %>%
+  group_by(cluster)
+```
+
+```{r}
+ DoHeatmap(test, features = markers.for.tet$gene ) + NoLegend()
+# heatmap_plot <- DoHeatmap(test, features = markers.for.tet ) + NoLegend()
+# ggsave(filename = "PS09-07_DGE_HTO_classification.pdf", plot = heatmap_plot, width = 12, height = 15)
+```
+
+# Gene Enriichment analysis
+
+```{r}
+# signatures <- read.csv("markers_by_clusters.csv")
+vision_obj <- readRDS("/Users/senlab/Partners HealthCare Dropbox/Chang-Yu Chen/Sen Lab/Chandrima Modak/gene_enrichment/vision_obj.RDS")
+```
+
+
+
+```{r}
+df <-  t(vision_obj@SigScores)
+dim(df)
+```
+
+```{r}
+data <- wilcoxauc(df, y = test@meta.data$condition)
+```
+
+```{r}
+data <- data %>%
+  filter(logFC > 0.5)
+```
+
+```{r}
+write_csv(data, "gene_enrichment_pathways_of_significance.csv")
+```
+
+```{r}
+test@meta.data <- cbind(test@meta.data, vision_obj@SigScores)
+```
+
+```{r}
+df <- df %>%
+  select(condition, HALLMARK_INTERFERON_GAMMA_RESPONSE, integrated_clusters, GSE10239_MEMORY_VS_KLRG1HIGH_EFF_CD8_TCELL_UP) %>%
+  group_by(condition)
+```
+
+```{r}
+umap <- getProjections(vision_obj)[["umap_harmony"]]
+# Create a data frame combining umap and df
+plot_data <- data.frame(
+  UMAP1 = umap[, 1],
+  UMAP2 = umap[, 2],
+  condition = df$condition,
+  response = df$GSE10239_MEMORY_VS_KLRG1HIGH_EFF_CD8_TCELL_UP
+)
+
+# Plot with ggplot2 and facet_wrap by condition
+ggplot(plot_data) +
+  aes(x = UMAP1, y = UMAP2, color = response) +
+  geom_point() +
+  facet_wrap(~ condition) +
+  scale_color_gradient(low = "lightgrey", high = "purple")+
+  theme_minimal() +
+  labs(
+    title = "UMAP Projections by Condition",
+    x = "UMAP Dimension 1",
+    y = "UMAP Dimension 2",
+    color = "MEMORY_VS_KLRG1HIGH_EFF_CD8_TCELL_U"
+  )
+```
+
+```{r}
+data$feature
+```
+
+```{r}
+
+```
+
+```{r}
+Idents(test) <- "condition"
+Idents(test) <- factor(Idents(test), levels = c("acute_d6", "acute_d8", "acute_tet+", "acute_d14", "chronic_d6","chronic_d8","chronic_d14"))
+```
+
+
+```{r}
+ vln_plot <- VlnPlot(test, features = c("GSE21360_NAIVE_VS_QUATERNARY_MEMORY_CD8_TCELL_UP", "HALLMARK_INTERFERON_GAMMA_RESPONSE", "BIOCARTA_IFNG_PATHWAY" , "KEGG_MEDICUS_REFERENCE_TLR3_IRF7_SIGNALING_PATHWAY" ),pt.size = 0.0, log = TRUE, ncol = 2)
+ggsave(filename =  "PS09-07_Geneset_enrichment.pdf", plot = vln_plot, width = 14, height = 8)
+```
+
+
+
