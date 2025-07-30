@@ -1,0 +1,1018 @@
+---
+title: "scRNA_data_integration"
+author: "Chandrima"
+date: "2025-04-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(patchwork)
+  library(Matrix)
+  library(tidyverse)
+  library(glmGamPoi)
+  library(reticulate)
+  # library(biomaRt)
+  library(EnhancedVolcano)
+  library(cowplot)
+  library(DoubletFinder)
+  library(mixtools)
+  # library(SoupX)
+  library(DropletUtils)
+  # library(data.table)
+  # library(here)
+  library(celda)
+  library(decontX)
+  library(clustree)
+  library(ggsci)
+  library(presto)
+  library(SeuratWrappers)
+  library(VISION)
+  # source("/Users/senlab/Partners HealthCare Dropbox/Chang-Yu Chen/Sen Lab/Chandrima Modak/PS09_integration/metafunction.R")
+  # use_condaenv("/Users/senlab/anaconda3/envs/scvi-env")
+  })
+```
+
+### Main Directory
+
+We are setting the main directory for the analysis of this scRNA-seq data with multiple assay layer, such as protein, donor hashing, conditions hashing, and crispr KO layer.
+
+```{r}
+path <- "/N/slate/chmodak/Senlab_2025/Analysis_2025"
+```
+
+Here were also get the cell cycle associated genes symbol for later calculation of cell cycle scores
+
+```{r}
+#Cell cycle genes
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+```
+
+#### Data loading
+
+First we start by loading the PS 07 day 14 scRNA-seq data set. In this scRNA assay there are 4 assays donor, condition(acutes and chronic), RNA, protein.
+
+**Note: We use decontX to remove ambient RNA from dead cells as the first QC step, prior to executing other QC steps downstream.** **DecontX by default in excuted on the RNA expression matrix**
+
+#### Here we start the Acutes
+
+```{r}
+# PS07 Acutes
+# Filtered Features matrix
+dfPS07A.Filtered <- Read10X(paste0(path,"/matrix_files_for_PS0X/PS07_A/filtered_feature_bc_matrix"))
+
+# Raw Features Matrix
+dfPS07A.Raw <- Read10X(paste0(path, "/matrix_files_for_PS0X/PS07_A/raw_feature_bc_matrix"))
+
+# Split protein and hastag
+dfPS07A.Filtered$`Antibody Capture` <- dfPS07A.Filtered$`Antibody Capture`[c(1:3), ]
+dfPS07A.Raw$`Antibody Capture` <- dfPS07A.Raw$`Antibody Capture`[c(1:3), ]
+
+# We manually set the hashing rownames to there respective donors
+rownames(dfPS07A.Filtered$`Antibody Capture`) <- c("donor-1", "donor-2", "donor-3")
+rownames(dfPS07A.Raw$`Antibody Capture`) <- c("donor-1", "donor-2", "donor-3")
+
+
+# DeconTX
+dfPS07A.decont <- decontX(dfPS07A.Filtered$`Gene Expression`, background = dfPS07A.Raw$`Gene Expression`)
+
+# Storing decontX QC plots in Decontx folder
+sub_dir <- "Decontx_QC"
+if(!dir.exists(file.path(path, sub_dir))){
+  dir.create(file.path(path, sub_dir))
+  location <- file.path(path, sub_dir)
+}else{
+  location <- file.path(path, sub_dir)
+}
+
+#QC Plots
+plotDecontXContamination(dfPS07A.decont)
+ggsave(paste0(location, "/decontx_QC_of_PS07_Acute_Day14.pdf"), width = 8, height = 6)
+```
+
+#### Next are the chronics
+
+```{r}
+# PS07 Chronics
+# Filtered Features matrix
+dfPS07C.Filtered <- Read10X(paste0(path, "/matrix_files_for_PS0X/PS07_C/filtered_feature_bc_matrix"))
+
+# Raw Features Matrix
+dfPS07C.Raw <- Read10X(paste0(path, "/matrix_files_for_PS0X/PS07_C/raw_feature_bc_matrix"))
+
+# Split protein and hastag
+dfPS07C.Filtered$`Antibody Capture` <- dfPS07C.Filtered$`Antibody Capture`[c(1:3), ]
+dfPS07C.Raw$`Antibody Capture` <- dfPS07C.Raw$`Antibody Capture`[c(1:3), ]
+
+# We manually set the hashing rownames to there respective donors
+rownames(dfPS07C.Filtered$`Antibody Capture`) <- c("donor-1", "donor-2", "donor-3")
+rownames(dfPS07C.Raw$`Antibody Capture`) <- c("donor-1", "donor-2", "donor-3")
+
+# DeconTX
+dfPS07C.decont <- decontX(dfPS07C.Filtered$`Gene Expression`, background = dfPS07C.Raw$`Gene Expression`)
+
+#QC Plots
+plotDecontXContamination(dfPS07C.decont)
+ggsave(paste0(location, "/decontx_QC_of_PS07_Chronic_Day14.pdf"), width = 8, height = 6)
+```
+
+Next we do the decontX of PS09 day 6, 8 and 10 experiments.
+
+**Note: PS08 was not included in the analysis because it was a toy test day set for technical tuning We start with day 6 dataset of PS09**
+
+```{r}
+# PS09 Day 6
+# Filtered Features matrix
+dfPS09D6.Filtered <- Read10X(paste0(path, "/matrix_files_for_PS0X/PS09D6/filtered_feature_bc_matrix"))
+
+# Raw Features Matrix
+dfPS09D6.Raw <- Read10X(paste0(path, "/matrix_files_for_PS0X/PS09D6/raw_feature_bc_matrix"))
+
+# Setting the rownames by there conditions as acutes and chronics at Day 6
+rownames(dfPS09D6.Filtered$`Antibody Capture`) <- c("acute-d6", "chronic-d6")
+rownames(dfPS09D6.Raw$`Antibody Capture`) <- c("acute-d6", "chronic-d6")
+
+# DeconTX
+dfPS09D6.decont <- decontX(dfPS09D6.Filtered$`Gene Expression`, background = dfPS09D6.Raw$`Gene Expression`)
+
+#QC Plots
+plotDecontXContamination(dfPS09D6.decont)
+ggsave(paste0(location, "/decontx_QC_of_PS09_AcutesandChronic_Day6.pdf"), width = 8, height = 6)
+```
+
+Next we do the same for day 8 and day 10 datasets
+
+```{r}
+# PS09 Day 8
+# Filtered Features matrix
+dfPS09D8.Filtered <- Read10X(paste0(path, "/matrix_files_for_PS0X/PS09D8/filtered_feature_bc_matrix"))
+
+# Raw Features Matrix
+dfPS09D8.Raw <- Read10X(paste0(path, "/matrix_files_for_PS0X/PS09D8/raw_feature_bc_matrix"))
+
+# Setting the rownames by there conditions as acutes and chronics at Day 8
+rownames(dfPS09D8.Filtered$`Antibody Capture`) <- c("acute-d8", "chronic-d8")
+rownames(dfPS09D8.Raw$`Antibody Capture`) <- c("acute-d8", "chronic-d8")
+
+# DeconTX
+dfPS09D8.decont <- decontX(dfPS09D8.Filtered$`Gene Expression`, background = dfPS09D8.Raw$`Gene Expression`)
+
+#QC Plots
+plotDecontXContamination(dfPS09D8.decont)
+ggsave(paste0(location, "/decontx_QC_of_PS09_AcutesandChronic_Day8.pdf"), width = 8, height = 6)
+```
+
+**Note: Day 10 assay is a acutes only assay**
+
+```{r}
+# PS09 TET Day 10
+# Filtered Features matrix
+dfPS09T.Filtered <- Read10X(paste0(path, "/matrix_files_for_PS0X/PS09TET/filtered_feature_bc_matrix"))
+
+# Raw Features Matrix
+dfPS09T.Raw <- Read10X(paste0(path, "/matrix_files_for_PS0X/PS09TET/raw_feature_bc_matrix"))
+
+
+# DeconTX
+dfPS09T.decont <- decontX(dfPS09T.Filtered$`Gene Expression`, background = dfPS09T.Raw$`Gene Expression`)
+
+#QC Plots
+plotDecontXContamination(dfPS09T.decont)
+ggsave(paste0(location, "/decontx_QC_of_PS09_Acutes_Day10.pdf"), width = 8, height = 6)
+```
+
+#### Here we start with making some rudimentary functions.
+
+This functions are been used multiple times for each assay such as calculating the percentage of mitochondrial,ribosomal,hemoglobin, and platelets RNAs, and remove those from our assays.
+
+**Note: Here we keep a soft threshold of total number of gene counts for any cell should be 200 and less than 5000, with percentage mitochondrial RNA \< 10, ribosomal \< 5, hemoglobin \< 1 and platelets \< 0.1**
+
+```{r}
+removeQC <- function(seuratobject) {
+  # Calculate QC metrics
+  seuratobject[["percent.mt"]] <- PercentageFeatureSet(seuratobject, pattern = "^MT-")
+  seuratobject[["percent.rb"]] <- PercentageFeatureSet(seuratobject, pattern = "^RP[SL]")
+  seuratobject[["percent.hb"]] <- PercentageFeatureSet(seuratobject, pattern = "^HB[^(P)]")
+  seuratobject[["percent.plat"]] <- PercentageFeatureSet(seuratobject, pattern = "PECAM1|PF4")
+  
+  # Subset cells based on QC thresholds
+  seuratobject <- subset(seuratobject,
+                         subset = nFeature_RNA > 200 & 
+                         nFeature_RNA < 5000 & 
+                         percent.mt < 10 & 
+                         percent.rb > 5 & 
+                         percent.hb < 1 & 
+                         percent.plat < 0.1)
+  
+  return(seuratobject)
+}
+```
+
+### Making the seurat objects
+
+#### Day 14 acutes
+
+```{r}
+# Storing QC plots in Decontx folder
+sub_dir <- "Standard_QC"
+if(!dir.exists(file.path(path, sub_dir))){
+  dir.create(file.path(path, sub_dir))
+  location <- file.path(path, sub_dir)
+}else{
+  location <- file.path(path, sub_dir)
+}
+
+dfPS07A.seurat <- CreateSeuratObject(dfPS07A.decont$decontXcounts, project = "PS07A")
+
+#QCed 
+dfPS07A.seurat.filtered <- removeQC(dfPS07A.seurat)
+
+p1 <- VlnPlot(dfPS07A.seurat,
+              features = c("nFeature_RNA", "nCount_RNA"),
+              pt.size = 0,ncol = 3) + 
+  NoLegend() + 
+  plot_annotation ("Unfiltered data", theme = 
+                     theme(plot.title = element_text(size = 22)))
+  
+p2 <- VlnPlot(dfPS07A.seurat.filtered,
+              features = c("nFeature_RNA", "nCount_RNA", 
+                           "percent.mt", "percent.rb", 
+                           "percent.hb", "percent.plat"),
+              pt.size = 0,ncol = 3) +
+  NoLegend() + 
+  plot_annotation ("Filtered data", 
+                   theme = theme(plot.title = element_text(size = 22)))
+# Combine plots
+plot_grid(p1, p2, ncol = 2)
+ggsave(paste0(location, "/QC_of_PS07_Acutes_Day14.pdf"), width = 12, height = 6)
+```
+
+#### Day14 Chronics
+
+```{r}
+dfPS07C.seurat <- CreateSeuratObject(dfPS07C.decont$decontXcounts, project = "PS07C")
+
+#QCed 
+dfPS07C.seurat.filtered <- removeQC(dfPS07C.seurat)
+
+p1 <- VlnPlot(dfPS07C.seurat,
+              features = c("nFeature_RNA", "nCount_RNA"),
+              pt.size = 0,ncol = 3) + 
+  NoLegend() + 
+  plot_annotation ("Unfiltered data", theme = 
+                     theme(plot.title = element_text(size = 22)))
+  
+p2 <- VlnPlot(dfPS07C.seurat.filtered,
+              features = c("nFeature_RNA", "nCount_RNA", 
+                           "percent.mt", "percent.rb", 
+                           "percent.hb", "percent.plat"),
+              pt.size = 0,ncol = 3) +
+  NoLegend() + 
+  plot_annotation ("Filtered data", 
+                   theme = theme(plot.title = element_text(size = 22)))
+# Combine plots
+plot_grid(p1, p2, ncol = 2)
+ggsave(paste0(location, "/QC_of_PS07_Chronics_Day14.pdf"), width = 12, height = 6)
+```
+
+#### Day 6
+
+```{r}
+dfPS09D6.seurat <- CreateSeuratObject(dfPS09D6.decont$decontXcounts, project = "PS09D6")
+#QCed 
+dfPS09D6.seurat.filtered <- removeQC(dfPS09D6.seurat)
+
+p1 <- VlnPlot(dfPS09D6.seurat,
+              features = c("nFeature_RNA", "nCount_RNA"),
+              pt.size = 0,ncol = 3) + 
+  NoLegend() + 
+  plot_annotation ("Unfiltered data", theme = 
+                     theme(plot.title = element_text(size = 22)))
+  
+p2 <- VlnPlot(dfPS09D6.seurat.filtered,
+              features = c("nFeature_RNA", "nCount_RNA", 
+                           "percent.mt", "percent.rb", 
+                           "percent.hb", "percent.plat"),
+              pt.size = 0,ncol = 3) +
+  NoLegend() + 
+  plot_annotation ("Filtered data", 
+                   theme = theme(plot.title = element_text(size = 22)))
+# Combine plots
+plot_grid(p1, p2, ncol = 2)
+ggsave(paste0(location, "/QC_of_PS09_AcutesandChronics_Day6.pdf"), width = 12, height = 6)
+```
+
+#### Day 8
+
+```{r}
+dfPS09D8.seurat <- CreateSeuratObject(dfPS09D8.decont$decontXcounts, project = "PS09D8")
+
+#QCed 
+dfPS09D8.seurat.filtered <- removeQC(dfPS09D8.seurat)
+
+p1 <- VlnPlot(dfPS09D8.seurat,
+              features = c("nFeature_RNA", "nCount_RNA"),
+              pt.size = 0,ncol = 3) + 
+  NoLegend() + 
+  plot_annotation ("Unfiltered data", theme = 
+                     theme(plot.title = element_text(size = 22)))
+  
+p2 <- VlnPlot(dfPS09D8.seurat.filtered,
+              features = c("nFeature_RNA", "nCount_RNA", 
+                           "percent.mt", "percent.rb", 
+                           "percent.hb", "percent.plat"),
+              pt.size = 0,ncol = 3) +
+  NoLegend() + 
+  plot_annotation ("Filtered data", 
+                   theme = theme(plot.title = element_text(size = 22)))
+# Combine plots
+plot_grid(p1, p2, ncol = 2)
+ggsave(paste0(location, "/QC_of_PS09_AcutesandChronics_Day8.pdf"), width = 12, height = 6)
+```
+
+#### Day 10 acutes only
+
+```{r}
+dfPS09T.seurat <- CreateSeuratObject(dfPS09T.decont$decontXcounts, project = "PS09D10A")
+#QCed 
+dfPS09T.seurat.filtered <- removeQC(dfPS09T.seurat)
+
+p1 <- VlnPlot(dfPS09T.seurat,
+              features = c("nFeature_RNA", "nCount_RNA"),
+              pt.size = 0,ncol = 3) + 
+  NoLegend() + 
+  plot_annotation ("Unfiltered data", theme = 
+                     theme(plot.title = element_text(size = 22)))
+  
+p2 <- VlnPlot(dfPS09T.seurat.filtered,
+              features = c("nFeature_RNA", "nCount_RNA", 
+                           "percent.mt", "percent.rb", 
+                           "percent.hb", "percent.plat"),
+              pt.size = 0,ncol = 3) +
+  NoLegend() + 
+  plot_annotation ("Filtered data", 
+                   theme = theme(plot.title = element_text(size = 22)))
+# Combine plots
+plot_grid(p1, p2, ncol = 2)
+ggsave(paste0(location, "/QC_of_PS09_acutes_Day10.pdf"), width = 12, height = 6)
+```
+
+Now post filtering of low quality,and dead cells we are left with subset of cells. So we need these cells matched with other cells present in other assays, before we demultiplex them there respective donors and conditions. Furthermore we add a column in metadata on which condition they below if the assay below to one condition such as acutes/chronics or donor if assay below to one donor such as donor-x
+
+#### Day 14 Acutes and Chronics
+
+```{r}
+# For Acutes
+#Intersecting same columns of cells
+common_cells <- intersect(colnames(dfPS07A.seurat.filtered), colnames(dfPS07A.Filtered$`Antibody Capture`))
+
+#Making seurat object of the Donor Assay
+dfPS07A.seurat.filtered[["DONOR"]] = CreateAssayObject(counts = dfPS07A.Filtered$`Antibody Capture`[,common_cells])
+
+#Demultiplexing donors
+dfPS07A.seurat.filtered <- dfPS07A.seurat.filtered |>
+  NormalizeData(assay = "DONOR", normalization.method = "CLR", margin = 2) |>
+  HTODemux(assay = "DONOR", positive.quantile = 0.99)
+
+p1 <- RidgePlot(dfPS07A.seurat.filtered, assay = "DONOR", 
+                features = rownames(dfPS07A.seurat.filtered[["DONOR"]]),
+                group.by = "DONOR_classification" , ncol = 2) +
+  NoLegend() + 
+  plot_annotation ("Acutes Day 14", 
+                   theme = theme(plot.title = element_text(size = 18)))
+#Setting the metadata column
+dfPS07A.seurat.filtered@meta.data$CONDITION_classification <- "acute-d14"
+
+#-----------------------------------------------------------------------------
+
+#For Chronics
+#Intersecting same columns of cells
+common_cells <- intersect(colnames(dfPS07C.seurat.filtered), colnames(dfPS07C.Filtered$`Antibody Capture`))
+#Donor Assay
+dfPS07C.seurat.filtered[["DONOR"]] = CreateAssayObject(counts = dfPS07C.Filtered$`Antibody Capture`[,common_cells])
+
+#Demultiplexing donors
+dfPS07C.seurat.filtered <- dfPS07C.seurat.filtered |>
+  NormalizeData(assay = "DONOR", normalization.method = "CLR", margin = 2) |>
+  HTODemux(assay = "DONOR", positive.quantile = 0.99)
+
+p2 <- RidgePlot(dfPS07C.seurat.filtered, assay = "DONOR", features = rownames(dfPS07C.seurat.filtered[["DONOR"]]), 
+          group.by = "DONOR_classification" , ncol = 2)+
+  NoLegend() + 
+  plot_annotation ("Chronics Day 14", 
+                   theme = theme(plot.title = element_text(size = 18)))
+#Setting the metadata column
+dfPS07C.seurat.filtered@meta.data$CONDITION_classification <- "chronic-d14"
+
+#Combine Plots
+plot_grid(ncol = 2, p1,p2)
+ggsave(paste0(location, "/donor__distribution_ps07.pdf"), width = 16, height = 8)
+```
+
+#### Day 6, 8 and 10
+
+Since the tetramer comes from one donor and one condition so we don't have dimultiplex it
+
+```{r}
+
+#Day 10
+dfPS09T.seurat.filtered@meta.data$CONDITION_classification <- "acute-d10"
+dfPS09T.seurat.filtered@meta.data$DONOR_classification <- "donor-4"
+
+# Day6
+#Intersecting same columns of cells
+common_cells <- intersect(colnames(dfPS09D6.seurat.filtered), colnames(dfPS09D6.Filtered$`Antibody Capture`))
+
+#Making seurat object of the Donor Assay
+dfPS09D6.seurat.filtered[["CONDITION"]] = CreateAssayObject(counts = dfPS09D6.Filtered$`Antibody Capture`[,common_cells])
+
+#Demultiplexing donors
+dfPS09D6.seurat.filtered <- dfPS09D6.seurat.filtered |>
+  NormalizeData(assay = "CONDITION", normalization.method = "CLR", margin = 2) |>
+  HTODemux(assay = "CONDITION", positive.quantile = 0.99)
+
+p1 <- RidgePlot(dfPS09D6.seurat.filtered, assay = "CONDITION", 
+                features = rownames(dfPS09D6.seurat.filtered[["CONDITION"]]),
+                group.by = "CONDITION_classification" , ncol = 2) +
+  NoLegend() + 
+  plot_annotation ("Day 6", 
+                   theme = theme(plot.title = element_text(size = 18)))
+#Setting the metadata column
+dfPS09D6.seurat.filtered@meta.data$DONOR_classification <- "donor-4"
+
+#-----------------------------------------------------------------------------
+
+#Day 8
+#Intersecting same columns of cells
+common_cells <- intersect(colnames(dfPS09D8.seurat.filtered), colnames(dfPS09D8.Filtered$`Antibody Capture`))
+
+#Making seurat object of the Donor Assay
+dfPS09D8.seurat.filtered[["CONDITION"]] = CreateAssayObject(counts = dfPS09D8.Filtered$`Antibody Capture`[,common_cells])
+
+#Demultiplexing donors
+dfPS09D8.seurat.filtered <- dfPS09D8.seurat.filtered |>
+  NormalizeData(assay = "CONDITION", normalization.method = "CLR", margin = 2) |>
+  HTODemux(assay = "CONDITION", positive.quantile = 0.99)
+
+p2 <- RidgePlot(dfPS09D8.seurat.filtered, assay = "CONDITION", 
+                features = rownames(dfPS09D8.seurat.filtered[["CONDITION"]]),
+                group.by = "CONDITION_classification" , ncol = 2) +
+  NoLegend() + 
+  plot_annotation ("Day 8", 
+                   theme = theme(plot.title = element_text(size = 18)))
+#Setting the metadata column
+dfPS09D8.seurat.filtered@meta.data$DONOR_classification <- "donor-4"
+
+#Combine Plots
+plot_grid(ncol = 2, p1,p2)
+ggsave(paste0(location, "/condition__distribution_ps09.pdf"), width = 16, height = 8)
+```
+
+Before we go for downstream analysis we remove the negative and doublet cells from both acute and chronic seurat objects from Day 14 and we do the same rest of the assays as well for acutes or chronics.
+
+```{r}
+# Day 14 acutes
+dfPS07A.seurat.filtered <- subset(dfPS07A.seurat.filtered, DONOR_classification.global == "Singlet")
+# Day 14 chronics
+dfPS07C.seurat.filtered <- subset(dfPS07C.seurat.filtered, DONOR_classification.global == "Singlet")
+# Day 6 
+dfPS09D6.seurat.filtered <- subset(dfPS09D6.seurat.filtered, CONDITION_classification.global == "Singlet")
+# Day 8
+dfPS09D8.seurat.filtered <- subset(dfPS09D8.seurat.filtered, CONDITION_classification.global == "Singlet")
+```
+
+**Now we calculate the cell cycle scores of all the datasets and merge all of them as one meta seurat object and store them**
+
+```{r}
+sub_dir <- "Seurat_QC"
+if(!dir.exists(file.path(path, sub_dir))){
+  dir.create(file.path(path, sub_dir))
+  location <- file.path(path, sub_dir)
+}else{
+  location <- file.path(path, sub_dir)
+}
+
+# Day 14 acutes 
+#Cell cycle regression score
+dfPS07A.seurat.filtered <- dfPS07A.seurat.filtered |>
+  NormalizeData(verbose = F) |>
+  CellCycleScoring(s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+saveRDS(dfPS07A.seurat.filtered, paste0(location, "/ps07_a_d14.rds"))
+
+#-----------------------------------------------------------------------------------
+# Day 14 chronics
+#Cell cycle regression score
+dfPS07C.seurat.filtered <- dfPS07C.seurat.filtered |>
+  NormalizeData(verbose = F) |>
+  CellCycleScoring(s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+saveRDS(dfPS07C.seurat.filtered, paste0(location, "/ps07_c_d14.rds"))
+
+#------------------------------------------------------------------------------------
+
+# Day 6
+#Cell cycle regression score
+dfPS09D6.seurat.filtered <- dfPS09D6.seurat.filtered |>
+  NormalizeData(verbose = F) |>
+  CellCycleScoring(s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+saveRDS(dfPS09D6.seurat.filtered, paste0(location, "/ps09_d6.rds"))
+
+#------------------------------------------------------------------------------------
+
+# Day 8
+#Cell cycle regression score
+dfPS09D8.seurat.filtered <- dfPS09D8.seurat.filtered |>
+  NormalizeData(verbose = F) |>
+  CellCycleScoring(s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+saveRDS(dfPS09D8.seurat.filtered, paste0(location, "/ps09_d8.rds"))
+
+#------------------------------------------------------------------------------------
+
+# Day 10
+#Cell cycle regression score
+dfPS09T.seurat.filtered <- dfPS09T.seurat.filtered |>
+  NormalizeData(verbose = F) |>
+  CellCycleScoring(s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+saveRDS(dfPS09T.seurat.filtered, paste0(location, "/ps09_d10.rds"))
+
+#----------------------------------------------------------------------------
+# Data merging and calculating unintegrated pca 
+dfPS <- merge(x = dfPS07A.seurat.filtered, y = c(dfPS07C.seurat.filtered, dfPS09D6.seurat.filtered, dfPS09D8.seurat.filtered, dfPS09T.seurat.filtered),add.cell.ids = c("07AD14", "07CD14", "09D6", "09D8", "09D10"),project = "PS")
+saveRDS(dfPS, paste0(location, "/merge_ps.rds"))
+```
+
+## Unintegrated data analysis of the merged data
+
+Here start with Normalizing the merged counts data and find top 50% genes that are variable for running PCA AND UMAP to check for how the integrated data behaves. This cutoff is taken as to reduce computation cost and also prior running of the pipeline showed more than 40% of the genes didn't contribute to the variance in computing PCA.
+
+**Note: Cell cycle gene expression is regressed out.**
+
+In this analysis we regress out the effects of cell cycle genes, gene counts and mitochondrial percent. This done because we want to see the biological signals, and they are not due inherent contributions of cell cycle genes, gene counts and mitochondrial genes.
+
+```{r}
+sub_dir <- "Seurat_QC"
+location <- file.path(path, sub_dir)
+# Loading merged seurat objects 
+dfPS <- readRDS(paste0(location, "/merge_ps.rds"))
+
+sub_dir <- "Integration_Analysis"
+if(!dir.exists(file.path(path, sub_dir))){
+  dir.create(file.path(path, sub_dir))
+  location <- file.path(path, sub_dir)
+}else{
+  location <- file.path(path, sub_dir)
+}
+saveRDS(dfPS, paste0(location, "/merge_ps.rds"))
+# Setting a vector of all genes
+all.genes <- rownames(dfPS)
+
+# Normalization and calculated top 50% genes that contribute to biological differences accross conditions and timepoints
+dfPS <- NormalizeData(dfPS, verbose = F) |>
+  FindVariableFeatures(nfeatures = 0.5*nrow(dfPS) ,selection.method = "vst",  verbose = F) 
+
+dfPS <- ScaleData(dfPS, features = all.genes, 
+            vars.to.regress = c("nFeature_RNA", "percent.mt", "S.Score", "G2M.Score"), 
+            verbose = T) 
+saveRDS(dfPS, paste0(location, "/dfPS0_scaled_unintegrated.RDS"))
+
+```
+
+Now take the variable gene list to run PCA
+
+```{r}
+# Top 50% Variable gene list
+var.genes = VariableFeatures(dfPS)
+
+#PCA
+dfPS <- dfPS |>
+  RunPCA(features = var.genes, reduction.name = "pca_UNI", 
+           reduction.key = "pc_uni", approx = F, verbose = T)
+
+saveRDS(dfPS, paste0(location, "/dfPS0_unintegrated_pca.RDS"))
+```
+
+Now we run UMAP do see how the unintegrated data behaves and check for the need for integration method on the data. Note: The UMAP is ran assuming for lower number of cluster to save computation time for check for the need for integration method on the data.
+
+```{r}
+sub_dir <- "Integration_Analysis"
+location <- file.path(path, sub_dir)
+# Load data
+dfPS <- readRDS(paste0(location, "/dfPS0_unintegrated_pca.RDS"))
+dfPS <- dfPS |> 
+  FindNeighbors(reduction = "pca_UNI", dims = 1:50)|>
+  FindClusters(resolution = 0.3)|>
+  RunUMAP(dims = 1:50, reduction = "pca_UNI", reduction.name = "umap_UNInt", reduction.key = "umap_unint")
+```
+
+Now we look at the UMAP to see the cell clustering at Res 0.3 by spliting them based upon donor and, cell cycle phase and conditions
+
+```{r}
+# Plotting the data
+# By condition
+p1 <- DimPlot(dfPS, reduction = "umap_UNInt", group.by = "CONDITION_classification")+
+  plot_annotation ("Conditions", 
+                   theme = theme(plot.title = element_text(size = 14)))
+
+# By Cell cycle phase
+p2 <- DimPlot(dfPS, reduction = "umap_UNInt", group.by = "Phase")+
+  plot_annotation ("Cell Cycle", 
+                   theme = theme(plot.title = element_text(size = 14)))
+
+# By donor
+p3 <- DimPlot(dfPS, reduction = "umap_UNInt", group.by = "DONOR_classification")+
+  plot_annotation ("Donor", 
+                   theme = theme(plot.title = element_text(size = 14)))
+#Combining Plots
+plot_grid(ncol =2, p1, p2, p3)
+
+ggsave(paste0(location, "/umap_unintegrated.pdf"), width = 10, height = 8)
+
+```
+
+We also want to see the cell distribution of each cluster split by condition, donor and cell cycle
+
+```{r}
+# Plotting the data
+# By condition
+# Relevel the CONDITION_classification column
+dfPS$CONDITION_classification <- factor(
+  dfPS$CONDITION_classification,
+  levels = c("acute-d6", "acute-d8", "acute-d10", "acute-d14", "chronic-d6", "chronic-d8", "chronic-d14")
+)
+DimPlot(dfPS, reduction = "umap_UNInt", split.by = "CONDITION_classification", group.by = "seurat_clusters")+
+  plot_annotation ("Conditions", 
+                   theme = theme(plot.title = element_text(size = 12)))
+ggsave(paste0(location, "/umap_unintegrated_condition_distr.pdf"), width = 10, height = 6)
+```
+
+```{r}
+# By Cell cycle phase
+DimPlot(dfPS, reduction = "umap_UNInt", split.by = "Phase", group.by = "seurat_clusters")+
+  plot_annotation ("Cell Cycle", 
+                   theme = theme(plot.title = element_text(size = 14)))
+ggsave(paste0(location, "/umap_unintegrated_cell_cycle_distr.pdf"), width = 10, height = 6)
+```
+
+```{r}
+# By donor
+DimPlot(dfPS, reduction = "umap_UNInt", split.by = "DONOR_classification", group.by = "seurat_clusters")+
+  plot_annotation ("Donor", 
+                   theme = theme(plot.title = element_text(size = 14)))
+
+ggsave(paste0(location, "/umap_unintegrated_donor_distr.pdf"), width = 10, height = 8)
+
+```
+
+From the above plots we can see that the unintegraded data in not available to group the two distinct groups acutes and chronics. So we perform harmonisation integration method to harmonize the cell so they closely cluster within there distinct biology.
+
+### Harmonization of the all the samples.
+
+\*\* Note: For running harmony we want to get factor that contribute to covariates(batch effect), since the data is imbalanced by donor-4 we remove the covariates donor effects \*\*
+
+```{r}
+var.genes <- VariableFeatures(dfPS)
+
+dfPS.harmony <- IntegrateLayers(object = dfPS, features = var.genes, method = HarmonyIntegration, orig.reduction = "pca_UNI", new.reduction = "harmony", max.iter.harmony = 100L, verbose = T)
+
+saveRDS(dfPS.harmony, paste0(location, "/dfPS_harmony.RDS"))
+```
+
+We quickly run umap on the harmony integrated data and see the results of integration. And plot the integrated data before computing doublets.
+
+```{r}
+dfPS.harmony.temp <- dfPS.harmony |> 
+  FindNeighbors(reduction = "harmony", dims = 1:50) |>
+  FindClusters(resolution = 0.3)|>
+  RunUMAP(dims = 1:50, reduction = "harmony", reduction.name = paste0("umap_harmony_", "0.3"), reduction.key = paste0("umap_harmony_", "0.3"))
+
+```
+
+#### Plots
+
+```{r}
+# Plotting the data
+# By condition
+p1 <- DimPlot(dfPS.harmony.temp, reduction = paste0("umap_harmony_", "0.3"), group.by = "CONDITION_classification")+
+  plot_annotation ("Conditions", 
+                   theme = theme(plot.title = element_text(size = 14)))
+
+# By Cell cycle phase
+p2 <- DimPlot(dfPS.harmony.temp, reduction = paste0("umap_harmony_", "0.3"), group.by = "Phase")+
+  plot_annotation ("Cell Cycle", 
+                   theme = theme(plot.title = element_text(size = 14)))
+
+# By donor
+p3 <- DimPlot(dfPS.harmony.temp, reduction = paste0("umap_harmony_", "0.3"), group.by = "DONOR_classification")+
+  plot_annotation ("Donor", 
+                   theme = theme(plot.title = element_text(size = 14)))
+#Combining Plots
+plot_grid(ncol =2, p1, p2, p3)
+
+ggsave(paste0(location, "/umap_harmony.pdf"), width = 12, height = 8)
+
+```
+
+```{r}
+# Plotting the data
+# By condition
+DimPlot(dfPS.harmony.temp, reduction = paste0("umap_harmony_", "0.3"), split.by = "CONDITION_classification", group.by = "seurat_clusters")+
+  plot_annotation ("Conditions", 
+                   theme = theme(plot.title = element_text(size = 12)))
+ggsave(paste0(location, "/umap_harmony_condition_distr.pdf"), width = 10, height = 6)
+```
+
+```{r}
+# By Cell cycle phase
+DimPlot(dfPS.harmony.temp, reduction = paste0("umap_harmony_", "0.3"), split.by = "Phase", group.by = "seurat_clusters")+
+  plot_annotation ("Cell Cycle", 
+                   theme = theme(plot.title = element_text(size = 14)))
+ggsave(paste0(location, "/umap_harmony_cell_cycle_distr.pdf"), width = 10, height = 6)
+```
+
+```{r}
+# By donor
+DimPlot(dfPS.harmony.temp, reduction = paste0("umap_harmony_", "0.3"), split.by = "DONOR_classification", group.by = "seurat_clusters")+
+  plot_annotation ("Donor", 
+                   theme = theme(plot.title = element_text(size = 14)))
+
+ggsave(paste0(location, "/umap_harmony_donor_distr.pdf"), width = 10, height = 8)
+
+```
+
+From the above plots it could be concluded that at signatures of acute day 14 and chronic day 14 overlap. This could be due to imbalance caused by cell counts between donor 1-3 and donor 4. So we revist the analysis by only running for donor 4.
+
+### Analysis with only donor 4
+
+```{r}
+sub_dir <- "Seurat_QC"
+location <- file.path(path, sub_dir)
+# Loading merged seurat objects 
+dfPS <- readRDS(paste0(location, "/merge_ps.rds"))
+
+sub_dir <- "Integration_Analysis"
+if(!dir.exists(file.path(path, sub_dir))){
+  dir.create(file.path(path, sub_dir))
+  location <- file.path(path, sub_dir)
+}else{
+  location <- file.path(path, sub_dir)
+}
+
+# Setting a vector of all genes
+all.genes <- rownames(dfPS)
+
+# Subsetting for donor-4
+dfPS <- subset(dfPS, DONOR_classification == "donor-4")
+
+# Normalization and calculated top 50% genes that contribute to biological differences accross conditions and timepoints
+dfPS <- NormalizeData(dfPS, verbose = F) |>
+  FindVariableFeatures(nfeatures = 0.5*nrow(dfPS) ,selection.method = "vst",  verbose = F) 
+
+dfPS <- ScaleData(dfPS, features = all.genes, 
+            vars.to.regress = c("nFeature_RNA", "percent.mt", "S.Score", "G2M.Score"), 
+            verbose = T) 
+saveRDS(dfPS, paste0(location, "/dfPS0_scaled_unintegrated_donor4.RDS"))
+
+```
+
+Now take the variable gene list to run PCA
+
+```{r}
+sub_dir <- "Integration_Analysis"
+location <- file.path(path, sub_dir)
+
+dfPS <- readRDS(paste0(location, "/dfPS0_scaled_unintegrated_donor4.RDS"))
+# Top 50% Variable gene list
+var.genes = VariableFeatures(dfPS)
+
+#PCA
+dfPS <- dfPS |>
+  RunPCA(features = var.genes, reduction.name = "pca_UNI", 
+           reduction.key = "pc_uni", approx = F, verbose = T)
+
+saveRDS(dfPS, paste0(location, "/dfPS0_unintegrated_pca_donor4.RDS"))
+```
+
+Now we run UMAP do see how the unintegrated data for only donor 4 data method on the data. 
+**Note: The UMAP is ran assuming for lower number of cluster to save computation time for check for the need for integration method on the data.**
+
+```{r}
+sub_dir <- "Integration_Analysis"
+location <- file.path(path, sub_dir)
+# Load data
+dfPS <- readRDS(paste0(location, "/dfPS0_unintegrated_pca_donor4.RDS"))
+dfPS <- dfPS |> 
+  FindNeighbors(reduction = "pca_UNI", dims = 1:50)|>
+  FindClusters(resolution = 0.3)|>
+  RunUMAP(dims = 1:50, reduction = "pca_UNI", reduction.name = "umap_UNInt", reduction.key = "umap_unint")
+```
+Now we look at the UMAP to see the cell clustering at Res 0.3 by spliting them based upon cell cycle phase and conditions
+
+```{r}
+# Plotting the data
+
+# Relevel the CONDITION_classification column
+dfPS$CONDITION_classification <- factor(
+  dfPS$CONDITION_classification,
+  levels = c("acute-d6", "acute-d8", "acute-d10",  "chronic-d6", "chronic-d8")
+)
+
+# By condition
+p1 <- DimPlot(dfPS, reduction = "umap_UNInt", group.by = "CONDITION_classification")+
+  plot_annotation ("Conditions", 
+                   theme = theme(plot.title = element_text(size = 14)))
+
+# By Cell cycle phase
+p2 <- DimPlot(dfPS, reduction = "umap_UNInt", group.by = "Phase")+
+  plot_annotation ("Cell Cycle", 
+                   theme = theme(plot.title = element_text(size = 14)))
+
+
+#Combining Plots
+plot_grid(ncol =2, p1, p2)
+
+ggsave(paste0(location, "/umap_unintegrated_donor4.pdf"), width = 12, height =6)
+
+```
+
+We also want to see the cell distribution of each cluster split by condition, donor and cell cycle
+
+```{r}
+# Plotting the data
+# By condition
+DimPlot(dfPS, reduction = "umap_UNInt", split.by = "CONDITION_classification", group.by = "seurat_clusters")+
+  plot_annotation ("Conditions", 
+                   theme = theme(plot.title = element_text(size = 12)))
+ggsave(paste0(location, "/umap_unintegrated_condition_distr_donor4.pdf"), width = 10, height = 6)
+```
+
+
+```{r}
+# By Cell cycle phase
+DimPlot(dfPS, reduction = "umap_UNInt", split.by = "Phase", group.by = "seurat_clusters")+
+  plot_annotation ("Cell Cycle", 
+                   theme = theme(plot.title = element_text(size = 14)))
+ggsave(paste0(location, "/umap_unintegrated_cell_cycle_distr_donor4.pdf"), width = 10, height = 6)
+```
+
+### Harmonization of the all the samples.
+
+```{r}
+var.genes <- VariableFeatures(dfPS)
+
+dfPS.harmony <- IntegrateLayers(object = dfPS, features = var.genes, method = HarmonyIntegration, orig.reduction = "pca_UNI", new.reduction = "harmony", max.iter.harmony = 100L, verbose = T)
+
+saveRDS(dfPS.harmony, paste0(location, "/dfPS_harmony_donor4.RDS"))
+```
+
+Next we compute for doublets cells. Here we assume there is 4% doublets cells in this dataset. Joining Layers is one crucial steps prior computing doublets. 
+**Note: this step is optional, because prior dimultiplexing has already remove doublet cells.**
+
+```{r}
+sub_dir <- "Integration_Analysis"
+location <- file.path(path, sub_dir)
+
+# Computing Doublets
+dfPS.harmony <- readRDS(paste0(location, "/dfPS_harmony_donor4.RDS"))
+dfPS.doublet <- dfPS.harmony
+nExp <- round(ncol(dfPS.doublet) * 0.04)
+
+# Joining the layers of the datasets
+dfPS.doublet[["RNA"]] <- JoinLayers(dfPS.doublet@assays$RNA)
+dfPS.doublet <- doubletFinder(dfPS.doublet, pN = 0.25, pK = 0.09, nExp = nExp, PCs = 1:30)
+```
+Here we plot the doublets on harmony pca
+```{r}
+DF.name = colnames(dfPS.doublet@meta.data)[grepl("DF.classification", colnames(dfPS.doublet@meta.data))]
+DimPlot(dfPS.doublet, reduction = "harmony", group.by = DF.name)
+```
+
+To determine the stable number of clusters we perform clustering at various resolutions we store the resolutions in in temporary seurat object harmony
+
+```{r}
+harmony  <- FindNeighbors(dfPS.doublet, reduction = "harmony", dims = 1:50)
+resolutions <- c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0)
+for (res in resolutions) {
+  harmony <- FindClusters(harmony, resolution = res, verbose = FALSE)
+}
+```
+#### Plotting the clustering resolution to find stable number of clusters
+```{r}
+# Extract clustering information
+clustering_data <- harmony@meta.data %>% 
+  select(contains("RNA_snn_res."))
+
+# Add the cell names as a column
+clustering_data$cell <- rownames(clustering_data)
+clustree_plot <- clustree(clustering_data, prefix = "RNA_snn_res.")
+
+ggsave(filename = paste0(location, "/dfPS0_cluster_harmony_res_donor4.pdf"), plot = clustree_plot, width = 10, height = 8)
+```
+
+Based on the cluster it could be concluded that the optimal number of cell clusters to be between 7-8 clusters. So we store clustering solution from resolution 0.3-0.8
+
+```{r}
+# Here run a loop for storing clustering res between 0.3 -0.8
+dfPS.doublet <- dfPS.doublet |> 
+  FindNeighbors(reduction = "harmony", dims = 1:50) 
+for (res in resolutions[3:8]){
+  dfPS.doublet <- dfPS.doublet |> 
+  FindClusters(resolution = res)|>
+  RunUMAP(dims = 1:50, reduction = "harmony", reduction.name = paste0("umap_harmony_", res), reduction.key = paste0("umap_harmony_", res))
+}
+
+saveRDS(dfPS.doublet , paste0(location, "/dfPS_harmony_umap_donor4_0.3-8.8.RDS"))
+```
+
+#### Ploting the clustering of at each resolution of the harmonized data
+```{r}
+plot_grid(ncol = 3,
+DimPlot(dfPS.doublet, reduction = "umap_harmony_0.3", group.by = "RNA_snn_res.0.3"),
+DimPlot(dfPS.doublet, reduction = "umap_harmony_0.4", group.by = "RNA_snn_res.0.4"),
+DimPlot(dfPS.doublet, reduction = "umap_harmony_0.5", group.by = "RNA_snn_res.0.5"),
+DimPlot(dfPS.doublet, reduction = "umap_harmony_0.6", group.by = "RNA_snn_res.0.6"),
+DimPlot(dfPS.doublet, reduction = "umap_harmony_0.7", group.by = "RNA_snn_res.0.7"),
+DimPlot(dfPS.doublet, reduction = "umap_harmony_0.8", group.by = "RNA_snn_res.0.8")
+)
+ggsave(paste0(location, "/clusters_donor4_res0.3-0.8.pdf"), width = 16, height = 10)
+```
+#### Splitting the plots based upon condition at different cluster size
+```{r}
+for(res in resolutions[3:8]){
+  DimPlot(dfPS.doublet, reduction = paste0("umap_harmony_", res), group.by = paste0("RNA_snn_res.", res), split.by = "CONDITION_classification")
+ggsave(paste0(location, "/clusters_split_by_donor4_condition_", res, ".pdf"), width = 10, height = 6)
+}
+
+```
+
+Now we selective plotting of few gene of interest and see there expression pattern 
+#Inhibitory Receptors
+
+```{r}
+sub_dir <- "Integration_Analysis"
+location <- file.path(path, sub_dir)
+dfPS.doublet <- readRDS(paste0(location, "/dfPS_harmony_umap_donor4_0.3-8.8.RDS"))
+
+# Average expression
+DotPlot(dfPS.doublet, features = c("PDCD1", "TIGIT", "CD244", "CTLA4", "ENTPD1", "CD38", "CD101", "HAVCR2", "LAG3"), group.by = "CONDITION_classification") + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(paste0(location, "/dotplot_donor4_inhibitors_at_res0.4.pdf"), width = 8, height = 6)
+
+# UMAP plot
+FeaturePlot(dfPS.doublet, reduction = "umap_harmony_0.4",cols = c("lightgrey", "darkgreen"), features = c("PDCD1", "TIGIT", "CD244", "CTLA4", "ENTPD1", "CD38", "CD101", "HAVCR2", "LAG3"), split.by = "CONDITION_classification" ,pt.size = 0.5)
+ggsave(paste0(location, "/umapplot_donor4_inhibitors_at_res0.4.pdf"), width = 16, height = 16)
+```
+
+####  TF Receptors
+
+```{r}
+# Average expression
+DotPlot(dfPS.doublet, features = c("HIF1A", "NFKB1", "TCF7", "ID2", "ID3", "NFKB2", "LEF1", "SATB1", "BACH2", "BATF", "NFATC1", "RUNX1", "RUNX3", "PRDM1", "TBX21", "TOX", "BCL6", "EOMES"
+,"GATA3","GATA3-AS1"), group.by = "CONDITION_classification") + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(paste0(location, "/dotplot_donor4_tfs_at_res0.4.pdf"), width = 10, height = 6)
+
+# UMAP plot
+FeaturePlot(dfPS.doublet, reduction = "umap_harmony_0.4",cols = c("lightgrey", "darkgreen"), features = c("HIF1A", "NFKB1", "TCF7", "ID2", "ID3", "NFKB2", "LEF1", "SATB1", "BACH2", "BATF", "NFATC1", "RUNX1", "RUNX3", "PRDM1", "TBX21", "TOX", "BCL6", "EOMES"
+,"GATA3","GATA3-AS1"), split.by = "CONDITION_classification" ,pt.size = 0.5)
+ggsave(paste0(location, "/umapplot_donor4_tfs_at_res0.4.pdf"), width = 22, height = 40)
+```
+#### Cell receptor
+
+```{r}
+# Average expression
+DotPlot(dfPS.doublet, features = c("TNFRSF9", "TNFRSF4", "ICOS", "TNFSF14", "SELL", "IL7R", "KLRG1", "CD28", "PARP1", "PARP2", "PARP3", "PARP4" ), group.by = "CONDITION_classification") + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(paste0(location, "/dotplot_donor4_cr_at_res0.4.pdf"), width = 10, height = 6)
+
+# UMAP plot
+FeaturePlot(dfPS.doublet, reduction = "umap_harmony_0.4",cols = c("lightgrey", "darkgreen"), features = c("TNFRSF9", "TNFRSF4", "ICOS", "TNFSF14", "SELL", "IL7R", "KLRG1", "CD28", "PARP1", "PARP2", "PARP3", "PARP4"), split.by = "CONDITION_classification" ,pt.size = 0.5)
+ggsave(paste0(location, "/umapplot_donor4_cr_at_res0.4.pdf"), width = 16, height = 16)
+```
+#### Effector Molecule
+
+```{r}
+# Average expression
+DotPlot(dfPS.doublet, features = c("IFNG", "TNF", "IL2", "IL10", "GZMA", "GZMB", "PRF1", "TNFSF10", "GZMK" ), group.by = "CONDITION_classification") + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(paste0(location, "/dotplot_donor4_em_at_res0.4.pdf"), width = 10, height = 6)
+
+# UMAP plot
+FeaturePlot(dfPS.doublet, reduction = "umap_harmony_0.4",cols = c("lightgrey", "darkgreen"), features = c("IFNG", "TNF", "IL2", "IL10", "GZMA", "GZMB", "PRF1", "TNFSF10", "GZMK"), split.by = "CONDITION_classification" ,pt.size = 0.5)
+ggsave(paste0(location, "/umapplot_donor4_em_at_res0.4.pdf"), width = 16, height = 16)
+```
+
+
+
+
+
+
+
+
+
